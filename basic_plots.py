@@ -23,15 +23,17 @@ ENGINE_REPL_DICT = {
     "msfragger_3_0": "MSFragger 3.0",
     "msgfplus_2021_03_22": "MSGF+ 2021.03.22",
     "omssa_2_1_9": "OMSSA 2.1.9",
-    "peptide_forest": "PeptideForest",
+    # "peptide_forest": "PeptideForest",
+    "random_forest": "Random Forest",
+    "xgboost": "XGBoost",
 }
 
 
 def plot_psms_at_qval_threshold(
-        files: dict,
-        palette: list = PALETTE,
-        engine_repl_dict: dict = ENGINE_REPL_DICT,
-        title=None,
+    files: dict,
+    palette: list = PALETTE,
+    engine_repl_dict: dict = ENGINE_REPL_DICT,
+    title=None,
 ):
     dfs = []
     for dataset, df in files.items():
@@ -56,6 +58,7 @@ def plot_psms_at_qval_threshold(
         x="Dataset",
         y="nPSMs with q-val <= 1%",
         hue="Engine",
+        hue_order=list(engine_repl_dict.values()),
         palette=palette,
     )
     ax.set_ylim(0, 30000)
@@ -68,19 +71,17 @@ def plot_psms_at_qval_threshold(
     #         xytext=(0, 10),
     #         textcoords="offset points",
     #     )
-    plt.title(title)
+    # plt.title(title)
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.0)
-    plt.savefig(
-        f"./{title}_npsms.png", dpi=400, bbox_inches="tight"
-    )
+    plt.savefig(f"./{title}_npsms.pdf", dpi=400, bbox_inches="tight")
     plt.show()
 
 
 def plot_q_value_curve(
-        files: dict,
-        palette: list = PALETTE,
-        engine_repl_dict: dict = ENGINE_REPL_DICT,
-        title=None,
+    files: dict,
+    palette: list = PALETTE,
+    engine_repl_dict: dict = ENGINE_REPL_DICT,
+    title=None,
 ):
     dfs = []
     for dataset, df in files.items():
@@ -106,14 +107,19 @@ def plot_q_value_curve(
     )
     plt_df.to_csv(f"./{title}_q_value_lines.csv", index=False)
     ax = sns.lineplot(
-        data=plt_df, x="q-value threshold", y="n PSMs", hue="Engine", palette=palette
+        data=plt_df,
+        x="q-value threshold",
+        y="n PSMs",
+        hue="Engine",
+        hue_order=list(engine_repl_dict.values()),
+        palette=palette,
     )
     ax.set_ylim(0, 30000)
-    plt.title(title)
+    # plt.title(title)
     plt.xscale("log")
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.0)
     plt.savefig(
-        f"./{title}_q_value_lines.png",
+        f"./{title}_q_value_lines.pdf",
         dpi=400,
         bbox_inches="tight",
     )
@@ -125,10 +131,10 @@ if __name__ == "__main__":
 
     DIR = Path("./thesis_results_1")
     files = {
-        "E13": DIR / "E13_vanilla_xgboost.csv",
-        "E32": DIR / "E32_vanilla_xgboost.csv",
-        "E41": DIR / "E41_vanilla_xgboost.csv",
-        "E50": DIR / "E50_vanilla_xgboost.csv",
+        "E13": DIR / "E13_merged.csv",
+        "E32": DIR / "E32_merged.csv",
+        "E41": DIR / "E41_merged.csv",
+        "E50": DIR / "E50_merged.csv",
     }
-    plot_psms_at_qval_threshold(files, title="xgb_vanilla")
-    plot_q_value_curve(files, title="xgb_vanilla")
+    plot_psms_at_qval_threshold(files, title="xgb_v_rf")
+    plot_q_value_curve(files, title="xgb_v_rf")

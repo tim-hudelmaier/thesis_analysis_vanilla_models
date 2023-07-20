@@ -25,7 +25,7 @@ files = {
 #     offset[ds[0]] = offset_df.loc[0, "offset_in_ppm_C12"]
 dfs = []
 for dataset, df in files.items():
-    df = pd.read_csv(df) #, index_col=0)
+    df = pd.read_csv(df)  # , index_col=0)
     df["dataset"] = dataset
     dfs.append(df)
 df = pd.concat(dfs, ignore_index=True)
@@ -36,8 +36,10 @@ engine_repl_dict = {
     "msfragger_3_0": "MSFragger 3.0",
     "msgfplus_2021_03_22": "MSGF+ 2021.03.22",
     "omssa_2_1_9": "OMSSA 2.1.9",
-    "xtandem_alanine": "X!Tandem Alanine",
-    "peptide_forest": "PeptideForest",
+    # "xtandem_alanine": "X!Tandem Alanine",
+    # "peptide_forest": "PeptideForest",
+    "random_forest": "Random Forest",
+    "xgboost": "XGBoost",
 }
 PROTON = 1.00727646677
 NEUTRAL_LOSSES = {
@@ -210,7 +212,12 @@ def _fragment_peptide(
     fragment_masses_reverse = defaultdict(set)
     # Forward ions
     for fw_ion_type in forward_ion_types:
-        possible_neutral_losses = [("",(0.0),)]
+        possible_neutral_losses = [
+            (
+                "",
+                (0.0),
+            )
+        ]
         possible_nls = set(possible_neutral_losses)
         for i in range(0, len(sequence)):
             aa = sequence[i]
@@ -224,28 +231,40 @@ def _fragment_peptide(
                     nl_mass = neutral_loss.get("mass", 0.0)
                     if (nl_mass != 0.0) and (len(possible_neutral_losses) <= 5):
                         possible_neutral_losses += [(neutral_loss["name"], nl_mass)]
-                        combs = [("".join(sorted([l[0] for l in combo])),sum([l[1] for l in combo]))
-                                 for combo in itertools.chain.from_iterable(
+                        combs = [
+                            (
+                                "".join(sorted([l[0] for l in combo])),
+                                sum([l[1] for l in combo]),
+                            )
+                            for combo in itertools.chain.from_iterable(
                                 itertools.combinations(possible_neutral_losses, j + 1)
                                 for j in range(len(possible_neutral_losses))
-                            )]
+                            )
+                        ]
                         possible_nls = set(combs)
                     if fw_ion_type in neutral_loss.get(
                         "available_in_series", [fw_ion_type]
                     ):
                         for charge in range(1, max_charge + 1):
                             for nl in possible_nls:
-                                fragment_masses_forward[fw_ion_type + str(i+1) + nl[0]].add(
+                                fragment_masses_forward[
+                                    fw_ion_type + str(i + 1) + nl[0]
+                                ].add(
                                     calculate_mz(
-                                        sum(pos_masses[:i+1])
+                                        sum(pos_masses[: i + 1])
                                         + nl[1]
                                         + fragment_starts_forward[fw_ion_type],
                                         charge,
-                                        )
+                                    )
                                 )
     # Reverse ions
     for rev_ion_type in reverse_ion_types:
-        possible_neutral_losses = [("",(0.0),)]
+        possible_neutral_losses = [
+            (
+                "",
+                (0.0),
+            )
+        ]
         possible_nls = set(possible_neutral_losses)
         for i in range(1, len(sequence) + 1):
             aa = sequence[-i]
@@ -259,11 +278,16 @@ def _fragment_peptide(
                     nl_mass = neutral_loss.get("mass", 0.0)
                     if (nl_mass != 0.0) and (len(possible_neutral_losses) <= 5):
                         possible_neutral_losses += [(neutral_loss["name"], nl_mass)]
-                        combs = [("".join(sorted([l[0] for l in combo])),sum([l[1] for l in combo]))
+                        combs = [
+                            (
+                                "".join(sorted([l[0] for l in combo])),
+                                sum([l[1] for l in combo]),
+                            )
                             for combo in itertools.chain.from_iterable(
                                 itertools.combinations(possible_neutral_losses, j + 1)
                                 for j in range(len(possible_neutral_losses))
-                            )]
+                            )
+                        ]
                         possible_nls = set(combs)
 
                     if rev_ion_type in neutral_loss.get(
@@ -271,7 +295,9 @@ def _fragment_peptide(
                     ):
                         for charge in range(1, max_charge + 1):
                             for nl in possible_nls:
-                                fragment_masses_reverse[rev_ion_type + str(i) + nl[0]].add(
+                                fragment_masses_reverse[
+                                    rev_ion_type + str(i) + nl[0]
+                                ].add(
                                     calculate_mz(
                                         sum(pos_masses[-i:])
                                         + nl[1]
@@ -286,77 +312,27 @@ um = UnimodMapper()
 
 
 def get_ions_list(l):
-    pattern = re.compile(r'[by]\d+')
+    pattern = re.compile(r"[by]\d+")
     b_and_y_list = []
     for item in l:
-        splitted_items = re.split(r'[+;]', item)
+        splitted_items = re.split(r"[+;]", item)
         for splitted_item in splitted_items:
             match = pattern.match(splitted_item)
             if match:
                 b_and_y_list.append(match.group())
     return b_and_y_list
 
-def plot_fragments(sequence, highlighted_fragments):
-    data = {
-        'Combination': [''] + [sequence[:i] + '-' + sequence[i:] for i in
-                               range(1, len(sequence))],
-        'b': [len(sequence)] + [i for i in range(1, len(sequence))],
-        'y': [0] + [len(sequence) - i for i in range(1, len(sequence))],
-        'b_name': ['b' + str(len(sequence))] + ['b' + str(i) for i in
-                                                range(1, len(sequence))],
-        'y_name': [''] + ['y' + str(len(sequence) - i) for i in range(1, len(sequence))]
-    }
-
-    df = pd.DataFrame(data)
-
-    df_melt = df[['Combination', 'b', 'y', 'b_name', 'y_name']].melt(
-        ['Combination', 'b_name', 'y_name'], var_name='Fragment', value_name='Length')
-
-    df_b = df_melt[df_melt['Fragment'] == 'b']
-    df_y = df_melt[df_melt['Fragment'] == 'y']
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    barplot_b = sns.barplot(x='Length', y='Combination', data=df_b, color='lightgray',
-                            orient='h', ax=ax)
-
-    sns.barplot(x='Length', y='Combination', data=df_y, color='darkgray',
-                left=df_b['Length'], orient='h', ax=ax)
-
-    ax.grid(False)
-    ax.axis('off')
-
-    for i, combination in enumerate(df['Combination']):
-        if i == 0:
-            for j, char in enumerate(sequence):
-                ax.text((df_b.iloc[i]['Length'] / len(sequence)) * (j + 0.5), i, char,
-                        ha='center', va='center', color='black', fontsize=14)
-
-    plt.draw()
-
-    for i, bar in enumerate(ax.patches[:len(df_b)]):
-        if df_b.iloc[i]['b_name'] in highlighted_fragments:
-            bar.set_color('red')
-
-    for i, bar in enumerate(ax.patches[len(df_b):]):
-        if df_y.iloc[i]['y_name'] in highlighted_fragments:
-            bar.set_color('blue')
-
-    for i, bar in enumerate(barplot_b.patches):
-        if i == 0:
-            bar.set_color('white')
-
-    plt.show()
 
 def best_plotaspec_function_ever(
-        mzml,
-        spectrum_id,
-        sequence,
-        modifications,
-        charge,
-        offset=None,
-        tolerance_in_ppm=5,
-        only_top_n_peaks=None,
+    mzml,
+    spectrum_id,
+    sequence,
+    modifications,
+    charge,
+    offset=None,
+    tolerance_in_ppm=5,
+    only_top_n_peaks=None,
+    title=None,
 ):
     ds = mzml[-14:-11]
     spec_peaks = pymzml.run.Reader(mzml)[spectrum_id].peaks("centroided")
@@ -379,37 +355,150 @@ def best_plotaspec_function_ever(
     for peak in spec_peaks[:, 0]:
         matches = ""
         for fragment, mzs in (theoretical_peaks[0] | theoretical_peaks[1]).items():
-            if any([abs(mz-peak) <= peak * tolerance_in_ppm * 1e-6 for mz in mzs]):
+            if any([abs(mz - peak) <= peak * tolerance_in_ppm * 1e-6 for mz in mzs]):
                 matches += fragment + ";"
         matched_annotation.append(matches.rstrip(";"))
-    colors = np.array([m != "" for m in matched_annotation])
+    matched_bars = np.array(["" != m for m in matched_annotation])
+    red_bars = np.array([("b" in m) for m in matched_annotation])
+    blue_bars = np.array([("y" in m) for m in matched_annotation])
 
-    ion_list = get_ions_list(matched_annotation)
-    plot_fragments(sequence, ion_list)
+    highlighted_fragments = get_ions_list(matched_annotation)
+    data = {
+        "Combination": [""]
+        + [sequence[:i] + "-" + sequence[i:] for i in range(1, len(sequence))],
+        "b": [len(sequence)] + [i for i in range(1, len(sequence))],
+        "y": [0] + [len(sequence) - i for i in range(1, len(sequence))],
+        "b_name": ["b" + str(len(sequence))]
+        + ["b" + str(i) for i in range(1, len(sequence))],
+        "y_name": [""]
+        + ["y" + str(len(sequence) - i) for i in range(1, len(sequence))],
+    }
 
-    fig, ax = plt.subplots()
+    df = pd.DataFrame(data)
 
-    chart = ax.bar(
-        x=spec_peaks[colors, 0],
-        height=spec_peaks[colors, 1],
-        width=5,
-        color="red",
+    df_melt = df[["Combination", "b", "y", "b_name", "y_name"]].melt(
+        ["Combination", "b_name", "y_name"], var_name="Fragment", value_name="Length"
     )
-    for bar, name in zip(chart, list(itertools.compress(matched_annotation, colors))):
-        height = bar.get_height()
-        ax.annotate(name, xy=(bar.get_x() + bar.get_width() / 2, height), xytext=(0,4), textcoords="offset points", ha="center", va="bottom", rotation=90, fontsize=6)
-    unmatched_chart = ax.bar(
-        x=spec_peaks[~colors, 0],
-        height=spec_peaks[~colors, 1],
+
+    df_b = df_melt[df_melt["Fragment"] == "b"]
+    df_y = df_melt[df_melt["Fragment"] == "y"]
+
+    fig, axs = plt.subplots(2, 1, figsize=(8, 10))
+
+    barplot_b = sns.barplot(
+        x="Length",
+        y="Combination",
+        data=df_b,
+        color="lightgray",
+        orient="h",
+        width=0.5,
+        ax=axs[1],
+    )
+
+    sns.barplot(
+        x="Length",
+        y="Combination",
+        data=df_y,
+        color="darkgray",
+        left=df_b["Length"],
+        orient="h",
+        width=0.5,
+        ax=axs[1],
+    )
+
+    axs[1].grid(False)
+    axs[1].axis("off")
+    # axs[1].set_box_aspect(.8)
+
+    for i, combination in enumerate(df["Combination"]):
+        if i == 0:
+            for j, char in enumerate(sequence):
+                axs[1].text(
+                    (df_b.iloc[i]["Length"] / len(sequence)) * (j + 0.5),
+                    i,
+                    char,
+                    ha="center",
+                    va="center",
+                    color="black",
+                    fontsize=14,
+                )
+
+    plt.draw()
+
+    for i, bar in enumerate(axs[1].patches[: len(df_b)]):
+        if df_b.iloc[i]["b_name"] in highlighted_fragments:
+            bar.set_color("red")
+
+    for i, bar in enumerate(axs[1].patches[len(df_b) :]):
+        if df_y.iloc[i]["y_name"] in highlighted_fragments:
+            bar.set_color("blue")
+
+    for i, bar in enumerate(barplot_b.patches):
+        if i == 0:
+            bar.set_color("white")
+
+    # plt.show()
+
+    # fig, ax = plt.subplots()
+
+    unmatched_chart = axs[0].bar(
+        x=spec_peaks[~matched_bars, 0],
+        height=spec_peaks[~matched_bars, 1],
         width=5,
         color="black",
     )
-    # # plt.yscale("log")
-    plt.title(
-        f"{ds}: Spectrum {spectrum_id} | {sum(colors)} matched peaks\n {sequence}#{modifications}"
+
+    red_chart = axs[0].bar(
+        x=spec_peaks[red_bars, 0],
+        height=spec_peaks[red_bars, 1],
+        width=5,
+        color="red",
     )
-    plt.xlabel("m/z")
-    plt.ylabel("Intensity")
+
+    blue_chart = axs[0].bar(
+        x=spec_peaks[blue_bars, 0],
+        height=spec_peaks[blue_bars, 1],
+        width=5,
+        color="blue",
+    )
+
+    for bar, name in zip(
+        red_chart, list(itertools.compress(matched_annotation, red_bars))
+    ):
+        height = bar.get_height()
+        axs[0].annotate(
+            name,
+            xy=(bar.get_x() + bar.get_width() / 2, height),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            rotation=90,
+            fontsize=6,
+        )
+
+    for bar, name in zip(
+        blue_chart, list(itertools.compress(matched_annotation, blue_bars))
+    ):
+        height = bar.get_height()
+        axs[0].annotate(
+            name,
+            xy=(bar.get_x() + bar.get_width() / 2, height),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            rotation=90,
+            fontsize=6,
+        )
+    # # plt.yscale("log")
+    axs[0].set_title(
+        f"{ds}: Spectrum {spectrum_id} | {sum(matched_bars)} matched peaks\n {sequence}#{modifications}"
+    )
+    axs[0].set_xlabel("m/z")
+    axs[0].set_ylabel("Intensity")
+    if title is not None:
+        fig.suptitle(title, fontsize=14, fontweight="bold", wrap=True)
     plt.savefig(
         f"./{ds}_{spectrum_id}_{sequence}_{modifications}.png",
         dpi=400,
@@ -419,21 +508,70 @@ def best_plotaspec_function_ever(
 
 
 top_target_cols = [c for c in df.columns if "top_target_" in c]
+reported_by_cols = [c for c in df.columns if "reported_by_" in c]
 
-plt_df = df.groupby(["dataset", "spectrum_id"]).get_group(("E13", 27727))
-plt_df = plt_df[plt_df[top_target_cols].any(axis=1)]
-for _, row in plt_df.iterrows():
-    if _ == 0:
-        continue
-    print(row[top_target_cols][row[top_target_cols]].index)
-    row = row.fillna("")
-    print(row[top_target_cols])
-    best_plotaspec_function_ever(
-        mzml="./" + row["raw_data_location"],
-        spectrum_id=row["spectrum_id"],
-        sequence=row["sequence"],
-        modifications=row["modifications"],
-        charge=row["charge"],
-        tolerance_in_ppm=200,
-        only_top_n_peaks=100,
-    )
+specs_to_plot = [32304]
+
+for spec in specs_to_plot:
+    plt_df = df.groupby(["dataset", "spectrum_id"]).get_group(("E13", spec))
+    # select highest ranked psm by each engine
+    idx = set()
+    engine_idx = {}
+    for engine in engine_repl_dict.keys():
+        if (
+            engine in ["random_forest", "xgboost"]
+            or plt_df[f"reported_by_{engine}"].any()
+        ):
+            idx.add(plt_df.sort_values(by=f"rank_{engine}").index[0])
+            engine_idx[engine] = plt_df.sort_values(by=f"rank_{engine}").index[0]
+    plt_df = plt_df.loc[list(idx)]
+
+    # plt_df = plt_df[plt_df[top_target_cols].any(axis=1)]
+    for idx, row in plt_df.iterrows():
+        if idx == 0:
+            continue
+
+        print(row[top_target_cols][row[top_target_cols]].index)
+        top_target_engines = [
+            engine_repl_dict[c.replace("top_target_", "")]
+            for c in row[top_target_cols][row[top_target_cols]].index
+        ]
+        reported_by_engines = [
+            engine_repl_dict[c.replace("reported_by_", "")]
+            for c in row[reported_by_cols][row[reported_by_cols]].index
+            if engine_idx[c.replace("reported_by_", "")] != idx
+        ]
+
+        for e in ["random_forest", "xgboost"]:
+            if (
+                    (engine_repl_dict[e] not in top_target_engines)
+                and (engine_repl_dict[e] not in reported_by_engines)
+                and (idx == engine_idx[e])
+            ):
+                reported_by_engines.append(e)
+
+        reported_by_engines = [
+            e for e in reported_by_engines if e not in top_target_engines
+        ]
+        if reported_by_engines == []:
+            title = ", ".join(top_target_engines)
+        else:
+            title = (
+                ", ".join(top_target_engines)
+                + " ["
+                + ", ".join(reported_by_engines)
+                + "]"
+            )
+
+        row = row.fillna("")
+        print(row[top_target_cols])
+        best_plotaspec_function_ever(
+            mzml="./" + row["raw_data_location"],
+            spectrum_id=row["spectrum_id"],
+            sequence=row["sequence"],
+            modifications=row["modifications"],
+            charge=row["charge"],
+            tolerance_in_ppm=5,
+            only_top_n_peaks=100,
+            title=title,
+        )
